@@ -24,12 +24,20 @@ namespace scene {
     Vec3f origin;
     Vec3f direction;
     Vec3f hit;
+    Vec3f normal;
+    float length;
   };
 
   struct Material {
     Vec3f colour;
     float diffuse;
     float specular;
+  };
+
+  struct Intersection {
+    bool hit;
+    Vec3f origin;
+    Material material;
   };
 
   class Sphere {
@@ -42,7 +50,7 @@ namespace scene {
   public:
     Sphere() = default;
     Sphere( const Vec3f& origin, const float radius, const Material& material );
-  
+
     const bool intersects( Ray& ray ) const;
 
   public:
@@ -60,6 +68,29 @@ namespace scene {
 
     const Material& material() const {
       return m_material;
+    }
+  };
+
+  class Plane {
+  private:
+
+  };
+
+  class Light {
+  private:
+    Vec3f m_origin;
+    Vec3f m_colour;
+
+  public:
+    Light( const Vec3f& origin, const Vec3f& colour );
+
+  public:
+    const Vec3f& origin() const {
+      return m_origin;
+    }
+
+    const Vec3f& colour() const {
+      return m_colour;
     }
   };
 
@@ -81,7 +112,7 @@ namespace scene {
 
     std::vector< Sphere > m_spheres;
 
-    Vec3f m_light;
+    Light m_light;
 
   public:
     Scene( app::Application* app, app::Window* window );
@@ -97,6 +128,8 @@ namespace scene {
     void draw();
   
   private:
+    bool trace( Ray& ray, Intersection* intersection );
+
     uint32_t main_image( const Vec2f& coord, const Vec2f& uv );
 
     void update_texture();

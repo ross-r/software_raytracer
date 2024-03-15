@@ -82,6 +82,30 @@ struct Vec3 {
     };
   }
 
+  const Vec3 operator+=( const Vec3& other ) const {
+    return {
+      x + other.x,
+      y + other.y,
+      z + other.z
+    };
+  }
+
+  const Vec3 operator+=( const float f ) const {
+    return {
+      x + f,
+      y + f,
+      z + f
+    };
+  }
+
+  const Vec3 operator/( const float f ) const {
+    return {
+      x / f,
+      y / f,
+      z / f
+    };
+  }
+
   const Vec3 normalized() const {
     const float len = sqrt( x * x + y * y + z * z );
     return {

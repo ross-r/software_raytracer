@@ -27,7 +27,7 @@ scene::Sphere::Sphere( const Vec3f& origin, const float radius, const Material& 
   m_material{ material } {}
 
 const bool scene::Sphere::intersects( Ray& ray ) const {
-  const Vec3f origin = ray.origin - m_origin;
+  const Vec3f origin = m_origin - ray.origin;
 
   const float a = ray.direction.dot( ray.direction );
   const float b = 2.F * origin.dot( ray.direction );
@@ -38,6 +38,7 @@ const bool scene::Sphere::intersects( Ray& ray ) const {
   float discriminant = b * b - 4.F * a * c;
   if( discriminant < 0.F ) {
     ray.hit = Vec3f();
+    ray.normal = Vec3f();
     return false;
   }
 
@@ -45,10 +46,19 @@ const bool scene::Sphere::intersects( Ray& ray ) const {
   float t0 = ( -b - sqrt( discriminant ) ) / ( 2.F * a );
   //float t1 = ( -b + sqrt( discriminant ) ) / ( 2.F * a );
 
-  ray.hit = origin + ray.direction * t0;
+  ray.length = t0;
+  ray.hit = origin + ray.direction * ray.length;
+  ray.normal = ray.hit.normalized();
 
   return true;
 }
+
+//
+// LIGHT
+//
+scene::Light::Light( const Vec3f& origin, const Vec3f& colour ) :
+  m_origin{ origin }, 
+  m_colour{ colour } {}
 
 //
 // SCENE
@@ -62,7 +72,7 @@ scene::Scene::Scene( app::Application* app, app::Window* window ) :
   m_texture_resource{},
   m_width{},
   m_height{},
-  m_light{ -1.F, -1.F, -1.F }
+  m_light{ Vec3f( 2.F, 2.F, -2.F ), Vec3f( 1.F, 1.F, 1.F ) }
 {
   m_draw_debug = true;
 
@@ -202,15 +212,34 @@ void scene::Scene::draw() {
       //ImGui::SliderFloat( "Sphere Z", &m_sphere.z, -1.F, 1.F );
       //ImGui::SliderFloat( "Sphere Radius", &m_sphere_radius, 0.F, 1.F );
 
-      ImGui::SliderFloat( "Light X", &m_light.x, -10.F, 10.F );
-      ImGui::SliderFloat( "Light Y", &m_light.y, -10.F, 10.F );
-      ImGui::SliderFloat( "Light Z", &m_light.z, -10.F, 10.F );
+      //ImGui::SliderFloat( "Light X", &m_light.x, -10.F, 10.F );
+      //ImGui::SliderFloat( "Light Y", &m_light.y, -10.F, 10.F );
+      //ImGui::SliderFloat( "Light Z", &m_light.z, -10.F, 10.F );
 
       ImGui::EndChild();
     }
 
     ImGui::End();
   }
+}
+
+bool scene::Scene::trace( Ray& ray, Intersection* intersection ) {
+  *intersection = Intersection{};
+  intersection->hit = false;
+
+  for( const auto& sphere : m_spheres ) {
+    if( !sphere.intersects( ray ) ) {
+      continue;
+    }
+
+    intersection->origin = sphere.origin();
+    intersection->material = sphere.material();
+    intersection->hit = true;
+
+    break;
+  }
+
+  return intersection->hit;
 }
 
 //
@@ -225,46 +254,51 @@ uint32_t scene::Scene::main_image( const Vec2f& coord, const Vec2f& uv ) {
   Vec3f colour( 0.33F, 0.33F, 0.33F );
   Vec3f mask = Vec3f( 1.F, 1.F, 1.F );
 
-  for( const auto& sphere : m_spheres ) {
-    Ray ray{
-      Vec3f( 0.F, 0.F, -2.F ),
-      Vec3f( uv.x, uv.y, -1.F )
-    };
+  Ray ray{
+    Vec3f( 0.F, 0.F, -2.F ),
+    Vec3f( uv.x, uv.y, -1.F )
+  };
 
-    if( !sphere.intersects( ray ) ) {
-      continue;
-    }
-
-    const Vec3f normal = ray.hit.normalized();
-
-    const Material& material = sphere.material();
+  Intersection intersection;
+  if( trace( ray, &intersection ) ) {
+    const Material& material = intersection.material;
 
     // http://en.wikipedia.org/wiki/Schlick's_approximation
     const Vec3f r0 = material.colour * material.specular;
-    const float hv = clamp( normal.dot( ray.direction * -1.F ), 0.F, 1.F );
+    const float hv = clamp( ray.normal.dot( ray.direction * -1.F ), 0.F, 1.F );
     const Vec3f fresnel = r0 + ( r0 * -1.F ) * powf( 1.F - hv, 5.F );
     mask = mask * fresnel;
-
-    // TODO: Add light colour support.
-    const float intensity = clamp( normal.dot( m_light * -1.F ), 0.F, 1.F );
+    
+    const float intensity = std::max( ray.normal.dot( m_light.origin() * -1.F ), 0.F );
 
     colour.x =
-      clamp( colour.x + intensity * material.colour.x, 0.F, 1.F )
-      * material.diffuse * ( ( 1.F - fresnel.x ) * mask.x / fresnel.x );
+      clamp( colour.x * intensity, 0.F, 1.F )
+      * material.colour.x
+      * m_light.colour().x
+      * material.diffuse
+      * ( ( 1.F - fresnel.x ) * mask.x / fresnel.x );
 
     colour.y =
-      clamp( colour.y + intensity * material.colour.y, 0.F, 1.F )
-      * material.diffuse * ( ( 1.F - fresnel.y ) * mask.y / fresnel.y );
+      clamp( colour.y * intensity, 0.F, 1.F )
+      * material.colour.y
+      * m_light.colour().y
+      * material.diffuse
+      * ( ( 1.F - fresnel.y ) * mask.y / fresnel.y );
 
     colour.z =
-      clamp( colour.z + intensity * material.colour.z, 0.F, 1.F )
-      * material.diffuse * ( ( 1.F - fresnel.z ) * mask.z / fresnel.z );
-  }
+      clamp( colour.z * intensity, 0.F, 1.F )
+      * material.colour.z
+      * m_light.colour().z
+      * material.diffuse
+      * ( ( 1.F - fresnel.z ) * mask.z / fresnel.z );
 
+    // TODO: reflect( ray, material )
+  }
+ 
   Colour fragColour{
-    ( uint8_t ) ( colour.x * 255.F ),
-    ( uint8_t ) ( colour.y * 255.F ),
-    ( uint8_t ) ( colour.z * 255.F ),
+    ( uint8_t ) ( clamp( colour.x, 0.F, 1.F ) * 255.F ),
+    ( uint8_t ) ( clamp( colour.y, 0.F, 1.F ) * 255.F ),
+    ( uint8_t ) ( clamp( colour.z, 0.F, 1.F ) * 255.F ),
     255
   };
 
